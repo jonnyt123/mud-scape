@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "id": 1000,
+      "name": "Mud Coin",
+      "type": "currency",
+      "stackable": true,
+      "value": 1
+    },
+    {
+      "id": 1001,
+      "name": "Pebble",
+      "type": "misc",
+      "stackable": true,
+      "value": 2
+    },
+    {
+      "id": 1002,
+      "name": "Rusty Sword",
+      "type": "weapon",
+      "stackable": false,
+      "value": 25,
+      "attack": 1
+    }
+  ]
+}
