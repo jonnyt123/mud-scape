@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mud Scape</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="root">
+    <canvas id="game" width="960" height="640"></canvas>
+
+    <div id="ui">
+      <div class="tabs">
+        <button onclick="UI.setTab('stats')">Stats</button>
+        <button onclick="UI.setTab('inventory')">Inventory</button>
+        <button onclick="UI.setTab('equipment')">Equipment</button>
+        <button onclick="UI.setTab('bank')">Bank</button>
+        <button onclick="UI.setTab('quests')">Quests</button>
+      </div>
+      <div id="panel"></div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
