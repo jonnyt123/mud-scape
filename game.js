@@ -1,423 +1,485 @@
-/* Mud Scape 3D - lightweight Three.js RPG foundation */
+/* Mud Scape 3D v2 - smoother mechanics + detail */
 (() => {
-  const canvas = document.getElementById('c');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x202020);
+  const $ = (id) => document.getElementById(id);
+  const hud = { hp: $('hp'), maxHp: $('maxHp'), gold: $('gold'),
+    atkLvl: $('atkLvl'), atkXp: $('atkXp'), atkNext: $('atkNext'),
+    defLvl: $('defLvl'), defXp: $('defXp'), defNext: $('defNext'), log: $('log') };
+  const log = (m) => { const d = document.createElement('div'); d.className='line'; d.textContent=m; hud.log.prepend(d); while (hud.log.childElementCount>14) hud.log.lastElementChild.remove(); };
 
-  const scene = new THREE.Scene();
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const xpNeed=(lvl)=>Math.floor(60*Math.pow(lvl,1.55));
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 800);
-  scene.add(camera);
+  const STATE = { seed: 2026, worldSize: 95, terrainSeg: 140 };
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 0.55);
+  const sfx={ctx:null, beep(f,sec){
+    try{ if(!this.ctx) this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+      o.frequency.value=f; g.gain.value=0.15;
+      o.connect(g).connect(this.ctx.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.001,this.ctx.currentTime+(sec||0.12));
+      o.stop(this.ctx.currentTime+(sec||0.12));
+    }catch{ }
+  }};
+
+  const player = { pos:new THREE.Vector3(0,0,0), vel:new THREE.Vector3(), yaw:0,
+    hp:28, maxHp:28, gold:0,
+    skills:{attack:{level:1,xp:0}, defense:{level:1,xp:0}},
+  };
+
+  function gainXP(skill,amount){
+    const s=player.skills[skill]; s.xp+=amount;
+    const need=xpNeed(s.level);
+    if(s.xp>=need){ s.xp-=need; s.level++; log(skill.toUpperCase()+" level up → "+s.level); sfx.beep(740,0.1);} }
+
+  function save(){
+    const pay={p:{x:player.pos.x,y:player.pos.y,z:player.pos.z,
+        vx:player.vel.x,vy:player.vel.y,vz:player.vel.z,
+        yaw:player.yaw,hp:player.hp,maxHp:player.maxHp,gold:player.gold,skills:player.skills},
+      cam:cameraRig,
+    };
+    localStorage.setItem('mudscape3d_v2',JSON.stringify(pay));
+    log('Saved');
+  }
+
+  function load(){
+    try{ const raw=localStorage.getItem('mudscape3d_v2'); if(!raw) return false;
+      const d=JSON.parse(raw);
+      player.pos.set(d.p.x,d.p.y,d.p.z);
+      player.vel.set(d.p.vx,d.p.vy,d.p.vz);
+      player.yaw=d.p.yaw;
+      player.hp=d.p.hp; player.maxHp=d.p.maxHp; player.gold=d.p.gold; player.skills=d.p.skills;
+      cameraRig.dist=clamp(d.cam.dist,6,18);
+      cameraRig.yaw=d.cam.yaw;
+      cameraRig.pitch=clamp(d.cam.pitch,-1.0,-0.15);
+      log('Loaded'); return true;
+    }catch{return false;}
+  }
+
+  const canvas=document.getElementById('c');
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x111215);
+  scene.fog=new THREE.Fog(0x111215,22,70);
+
+  const camera=new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1,200);
+
+  const hemi=new THREE.HemisphereLight(0xddeeff,0x223311,0.7);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-  sun.position.set(12, 18, 8);
-  sun.castShadow = true;
+  const sun=new THREE.DirectionalLight(0xffffff,1.1);
+  sun.position.set(16,26,8);
+  sun.castShadow=true;
+  sun.shadow.camera.left=-35;
+  sun.shadow.camera.right=35;
+  sun.shadow.camera.top=35;
+  sun.shadow.camera.bottom=-35;
+  sun.shadow.camera.near=1;
+  sun.shadow.camera.far=85;
+  sun.shadow.mapSize.set(2048,2048);
   scene.add(sun);
 
-  // UI
-  const el = id => document.getElementById(id);
-  const hud = {
-    hp: el('hp'),
-    maxHp: el('maxHp'),
-    gold: el('gold'),
-    atkLvl: el('atkLvl'),
-    atkXp: el('atkXp'),
-    atkNext: el('atkNext'),
-    defLvl: el('defLvl'),
-    defXp: el('defXp'),
-    defNext: el('defNext'),
-    log: el('log'),
-  };
-
-  const log = msg => {
-    const div = document.createElement('div');
-    div.className = 'line';
-    div.textContent = msg;
-    hud.log.prepend(div);
-    while (hud.log.childElementCount > 12) hud.log.lastElementChild.remove();
-  };
-
-  // RNG (deterministic for consistent world)
-  function createRng(seed = 1337) {
-    let s = seed >>> 0;
-    return () => {
-      s ^= s << 13; s >>>= 0;
-      s ^= s >> 17;
-      s ^= s << 5; s >>>= 0;
-      return (s >>> 0) / 0xFFFFFFFF;
-    };
+  // deterministic hash noise
+  function hash(ix,iz){
+    let v=Math.sin(ix*127.1 + iz*311.7 + STATE.seed)*43758.5453;
+    return v-Math.floor(v);
   }
 
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const lerp = (a, b, t) => a + (b - a) * t;
-
-  const XP = lvl => Math.floor(60 * Math.pow(lvl, 1.6));
-
-  const state = {
-    player: {
-      pos: new THREE.Vector3(0, 0, 0),
-      target: new THREE.Vector3(0, 0, 0),
-      hp: 20,
-      maxHp: 20,
-      gold: 0,
-      skills: {
-        attack: { level: 1, xp: 0 },
-        defense: { level: 1, xp: 0 },
-      },
-    },
-    enemies: [],
-    rngSeed: 2024,
-  };
-
-  function save() {
-    try {
-      const s = {
-        p: {
-          x: state.player.pos.x,
-          z: state.player.pos.z,
-          hp: state.player.hp,
-          maxHp: state.player.maxHp,
-          gold: state.player.gold,
-          skills: state.player.skills,
-        },
-        seed: state.rngSeed,
-      };
-      localStorage.setItem('mudscape3d', JSON.stringify(s));
-      log('Game saved');
-    } catch {
-      log('Save failed (storage unavailable)');
-    }
+  function noise(x,z){
+    const scale=18;
+    const sx=x/scale, sz=z/scale;
+    const ix=Math.floor(sx), iz=Math.floor(sz);
+    const fx=sx-ix, fz=sz-iz;
+    const s=(t)=>t*t*(3-2*t);
+    const v00=hash(ix,iz), v10=hash(ix+1,iz), v01=hash(ix,iz+1), v11=hash(ix+1,iz+1);
+    const ux=s(fx), uz=s(fz);
+    const a=v00*(1-ux)+v10*ux;
+    const b=v01*(1-ux)+v11*ux;
+    return a*(1-uz)+b*uz;
   }
 
-  function load() {
-    try {
-      const raw = localStorage.getItem('mudscape3d');
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      state.rngSeed = parsed.seed || state.rngSeed;
-      state.player.pos.x = parsed.p?.x ?? 0;
-      state.player.pos.z = parsed.p?.z ?? 0;
-      state.player.target.copy(state.player.pos);
-      state.player.hp = parsed.p?.hp ?? 20;
-      state.player.maxHp = parsed.p?.maxHp ?? 20;
-      state.player.gold = parsed.p?.gold ?? 0;
-      state.player.skills = parsed.p?.skills ?? state.player.skills;
-      log('Save loaded');
-      return true;
-    } catch {
-      return false;
-    }
+  function fbm(x,z){
+    let a=1, f=1, sum=0, norm=0;
+    for(let i=0;i<4;i++){ sum+=noise(x*f,z*f)*a; norm+=a; a*=0.5; f*=1.85; }
+    return sum/norm;
   }
 
-  // Player model (no copyrighted assets)
-  const playerGroup = new THREE.Group();
-  playerGroup.castShadow = true;
-  playerGroup.receiveShadow = true;
-  scene.add(playerGroup);
-
-  function makePlayerModel() {
-    playerGroup.clear();
-
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x77aaff, flatShading: true });
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xffd4a3, flatShading: true });
-
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 1.6, 6), bodyMat);
-    body.position.y = 1.1;
-    playerGroup.add(body);
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), skinMat);
-    head.position.y = 2.0;
-    playerGroup.add(head);
-
-    const shoulder = new THREE.BoxGeometry(0.2, 0.7, 0.2);
-    const armL = new THREE.Mesh(shoulder, skinMat);
-    const armR = armL.clone();
-    armL.position.set(-0.75, 1.0, 0);
-    armR.position.set(0.75, 1.0, 0);
-    playerGroup.add(armL, armR);
-
-    const legGeo = new THREE.BoxGeometry(0.25, 0.9, 0.25);
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x223355, flatShading: true });
-    const legL = new THREE.Mesh(legGeo, legMat);
-    const legR = legL.clone();
-    legL.position.set(-0.25, 0.45, 0);
-    legR.position.set(0.25, 0.45, 0);
-    playerGroup.add(legL, legR);
-
-    playerGroup.position.set(0, 0, 0);
+  function height(x,z){
+    const base=fbm(x,z);
+    const ridge=Math.abs(base-0.5)*2;
+    return (base*0.85 + ridge*0.15)*2.25;
   }
 
-  makePlayerModel();
-
-  // Enemies
-  function spawnEnemies(rng) {
-    state.enemies.length = 0;
-    const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff5555, flatShading: true });
-
-    for (let i = 0; i < 6; i++) {
-      const g = new THREE.Group();
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), enemyMat);
-      b.castShadow = true;
-      g.add(b);
-
-      const x = (rng() - 0.5) * 22;
-      const z = (rng() - 0.5) * 22;
-      g.position.set(x, 0.4, z);
-      scene.add(g);
-
-      state.enemies.push({
-        group: g,
-        pos: g.position,
-        hp: 8 + Math.floor(rng() * 6),
-        maxHp: 8,
-        t: 0,
-      });
-    }
+  const groundGeo=new THREE.PlaneGeometry(STATE.worldSize,STATE.worldSize,STATE.terrainSeg,STATE.terrainSeg);
+  groundGeo.rotateX(-Math.PI/2);
+  const pos=groundGeo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i);
+    pos.setY(i,height(x,z));
   }
+  groundGeo.computeVertexNormals();
 
-  function moveHpBar(e, dmg) {
-    log(`Enemy hit for ${dmg}`);
-  }
-
-  // World terrain
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(36, 36, 36, 36),
-    new THREE.MeshStandardMaterial({ color: 0x4b5c3d, flatShading: true, side: THREE.DoubleSide })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
+  const groundMat=new THREE.MeshStandardMaterial({color:0x4a5f41, roughness:0.98});
+  const ground=new THREE.Mesh(groundGeo, groundMat);
+  ground.receiveShadow=true;
   scene.add(ground);
 
-  // Some rocks/trees
-  function spawnProps(rng) {
-    for (let i = 0; i < 20; i++) {
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.8, 5), new THREE.MeshStandardMaterial({ color: 0x8b5a2b, flatShading: true }));
-      trunk.position.y = 0.4;
-      tree.add(trunk);
-      const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.4, 7), new THREE.MeshStandardMaterial({ color: 0x2f4f2f, flatShading: true }));
-      leaves.position.y = 1.35;
-      tree.add(leaves);
-      tree.position.set((rng() - 0.5) * 30, 0, (rng() - 0.5) * 30);
-      tree.castShadow = true;
-      tree.receiveShadow = true;
-      scene.add(tree);
-    }
+  function sampleGroundY(x,z){ return height(x,z); }
 
-    for (let i = 0; i < 10; i++) {
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ color: 0x777777, flatShading: true }));
-      rock.position.set((rng() - 0.5) * 32, 0.3, (rng() - 0.5) * 32);
-      rock.castShadow = true;
-      rock.receiveShadow = true;
-      scene.add(rock);
+  // props
+  function addProp(obj){ obj.castShadow=true; obj.receiveShadow=true; scene.add(obj); }
+
+  function spawnTrees(count){
+    const tMat=new THREE.MeshStandardMaterial({color:0x5a3c2a, roughness:1});
+    const lMat=new THREE.MeshStandardMaterial({color:0x2f5a2f, roughness:1});
+    for(let i=0;i<count;i++){
+      const x=(Math.random()-0.5)*(STATE.worldSize-6);
+      const z=(Math.random()-0.5)*(STATE.worldSize-6);
+      if(Math.hypot(x,z)<5){ i--; continue; }
+      const y=sampleGroundY(x,z);
+      const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,1.6,6), tMat);
+      trunk.position.set(x,y+0.8,z);
+      const leaves=new THREE.Mesh(new THREE.ConeGeometry(0.9,2.0,8), lMat);
+      leaves.position.set(x,y+2.1,z);
+      const g=new THREE.Group(); g.add(trunk,leaves); addProp(g);
     }
   }
 
-  // Navigation + camera orbit
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
+  function spawnRocks(count){
+    const rMat=new THREE.MeshStandardMaterial({color:0x7a7a7a, roughness:0.95});
+    for(let i=0;i<count;i++){
+      const x=(Math.random()-0.5)*(STATE.worldSize-4);
+      const z=(Math.random()-0.5)*(STATE.worldSize-4);
+      if(Math.hypot(x,z)<5){ i--; continue; }
+      const y=sampleGroundY(x,z);
+      const s=lerp(0.45,1.25,Math.random());
+      const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0), rMat);
+      rock.position.set(x,y+0.25*s,z);
+      addProp(rock);
+    }
+  }
 
-  const view = {
-    yaw: 0,
-    pitch: -0.35,
-    dist: 16,
-    orbiting: false,
-  };
+  spawnTrees(220);
+  spawnRocks(80);
 
-  function setCamera() {
-    camera.aspect = canvas.clientWidth / canvas.clientHeight;
+  // player model
+  const playerMesh=new THREE.Group();
+  (function buildPlayer(){
+    const bodyMat=new THREE.MeshStandardMaterial({color:0xd8c24f, roughness:0.95});
+    const dark=new THREE.MeshStandardMaterial({color:0x2b2b2b, roughness:1});
+    const torso=new THREE.Mesh(new THREE.BoxGeometry(0.78,0.95,0.45), bodyMat);
+    torso.position.y=1.2; torso.castShadow=true;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.55,0.55), bodyMat);
+    head.position.y=1.85; head.castShadow=true;
+    const legGeo=new THREE.BoxGeometry(0.26,0.6,0.26);
+    const legL=new THREE.Mesh(legGeo,dark); const legR=legL.clone();
+    legL.position.set(-0.2,0.55,0); legR.position.set(0.2,0.55,0);
+    legL.castShadow=legR.castShadow=true;
+    playerMesh.add(torso,head,legL,legR);
+    playerMesh.castShadow=true; playerMesh.receiveShadow=true;
+    scene.add(playerMesh);
+  })();
+
+  // floating damage text
+  const sprites=[];
+  function spawnText(text, pos, color){
+    const d=document.createElement('canvas'); d.width=128; d.height=64;
+    const ctx=d.getContext('2d');
+    ctx.font='bold 20px monospace'; ctx.textAlign='center'; ctx.fillStyle=color;
+    ctx.fillText(text,64,38);
+    const tex=new THREE.CanvasTexture(d);
+    tex.minFilter=THREE.LinearFilter;
+    const mat=new THREE.SpriteMaterial({map:tex, transparent:true});
+    const s=new THREE.Sprite(mat);
+    s.position.copy(pos); s.position.y+=2.0;
+    s.scale.set(1.1,0.55,1);
+    s.userData.birth=performance.now();
+    sprites.push(s); scene.add(s);
+  }
+
+  // enemies
+  const enemies=[];
+  function makeEnemy(x,z){
+    const mat=new THREE.MeshStandardMaterial({color:0x933f3f, roughness:1});
+    const m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9),mat);
+    const y=sampleGroundY(x,z);
+    m.position.set(x,y+0.45,z);
+    m.castShadow=true;
+    m.userData={hp:10, alive:true, home:{x,z}, state:'wander', t:0, target:{x,y:z}, lastHitAt:0};
+    enemies.push(m); scene.add(m);
+  }
+
+  for(let i=0;i<12;i++){
+    const x=(Math.random()-0.5)* (STATE.worldSize-10);
+    const z=(Math.random()-0.5)* (STATE.worldSize-10);
+    if(Math.hypot(x,z)<6){ i--; continue; }
+    makeEnemy(x,z);
+  }
+
+  // raycast
+  const raycaster=new THREE.Raycaster();
+  const mouse=new THREE.Vector2();
+
+  // camera rig
+  const cameraRig={yaw:0, pitch:-0.35, dist:9.5};
+  let cameraPos=new THREE.Vector3(0,10,10);
+  let pendingMove=null;
+  let orbiting=false;
+
+  function updateCamera(dt){
+    cameraRig.dist=clamp(cameraRig.dist,6,18);
+    cameraRig.pitch=clamp(cameraRig.pitch,-1.2,-0.12);
+
+    const yaw=cameraRig.yaw, pitch=cameraRig.pitch;
+    const offset=new THREE.Vector3(
+      Math.sin(yaw)*Math.cos(pitch),
+      Math.sin(-pitch),
+      Math.cos(yaw)*Math.cos(pitch)
+    ).multiplyScalar(cameraRig.dist);
+
+    const target=new THREE.Vector3(player.pos.x, player.pos.y+1.5, player.pos.z);
+    target.y+=5.0;
+    const desired=target.clone().sub(offset);
+
+    const spring=18;
+    cameraPos.lerp(desired, clamp(spring*dt,0,1));
+    camera.position.copy(cameraPos);
+    camera.lookAt(player.pos.x, player.pos.y+1.2, player.pos.z);
+    camera.aspect=canvas.clientWidth/canvas.clientHeight;
     camera.updateProjectionMatrix();
-
-    const forward = new THREE.Vector3(
-      Math.sin(view.yaw),
-      0,
-      Math.cos(view.yaw)
-    );
-
-    const camPos = playerGroup.position.clone()
-      .add(new THREE.Vector3(0, 1.4, 0))
-      .addScaledVector(forward, -view.dist);
-
-    camPos.y += 6 + view.dist * 0.1;
-
-    camera.position.copy(camPos);
-    camera.lookAt(playerGroup.position.x, 1.2, playerGroup.position.z);
   }
 
-  // Combat
-  function gain(skill, xp) {
-    const s = state.player.skills[skill];
-    s.xp += xp;
-    const next = XP(s.level);
-    if (s.xp >= next) {
-      s.xp -= next;
-      s.level++;
-      log(`${skill} level up!`);
-    }
+  function toWorld(yaw){
+    return new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
   }
 
-  function tickCombat() {
-    const p = state.player;
-    const atkLvl = p.skills.attack.level;
-
-    // nearby enemy
-    let nearest = null;
-    let nd = Infinity;
-    for (const e of state.enemies) {
-      const d = e.pos.distanceToSquared(p.pos);
-      if (d < nd) {
-        nd = d;
-        nearest = e;
-      }
-    }
-
-    const isClose = nearest && nearest.pos.distanceTo(p.pos) < 1.7;
-    if (!isClose) return;
-
-    // Attack tick
-    const dmg = 1 + atkLvl;
-    nearest.hp -= dmg;
-    moveHpBar(nearest, dmg);
-
-    p.hp -= 1;
-
-    if (nearest.hp <= 0) {
-      state.player.gold += 5;
-      gain('attack', 25);
-      state.enemies = state.enemies.filter(e => e !== nearest);
-      scene.remove(nearest.group);
-      log('Enemy defeated');
-      if (!state.enemies.length) log('All enemies cleared');
-    }
-
-    if (p.hp <= 0) {
-      p.hp = p.maxHp;
-      p.pos.set(0, 0, 0);
-      p.target.copy(p.pos);
-      log('You died (respawned)');
-    }
+  function setMoveTarget(worldPoint){
+    pendingMove=worldPoint.clone();
   }
 
-  setInterval(tickCombat, 650);
+  function handlePointerDown(e){
+    canvas.setPointerCapture(e.pointerId);
+    if(e.button===2){ orbiting=true; return; }
 
-  function updateHud() {
-    const p = state.player;
-    const atk = p.skills.attack;
-    const def = p.skills.defense;
-    hud.hp.textContent = p.hp;
-    hud.maxHp.textContent = p.maxHp;
-    hud.gold.textContent = p.gold;
-    hud.atkLvl.textContent = atk.level;
-    hud.atkXp.textContent = atk.xp;
-    hud.atkNext.textContent = XP(atk.level);
-    hud.defLvl.textContent = def.level;
-    hud.defXp.textContent = def.xp;
-    hud.defNext.textContent = XP(def.level);
-  }
+    mouse.x=(e.clientX/canvas.clientWidth)*2-1;
+    mouse.y=-(e.clientY/canvas.clientHeight)*2+1;
+    raycaster.setFromCamera(mouse,camera);
 
-  // Input
-  window.addEventListener('resize', () => {
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-  });
-
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-  canvas.addEventListener('pointerdown', e => {
-    if (e.button === 2) {
-      view.orbiting = true;
-      canvas.setPointerCapture(e.pointerId);
+    // enemies first
+    const enemyHits=raycaster.intersectObjects(enemies.filter(o=>o.userData.alive), false);
+    if(enemyHits.length){
+      setMoveTarget(enemyHits[0].object.position);
+      log('Target acquired');
       return;
     }
 
-    // left click: raycast
-    mouse.x = (e.clientX / canvas.clientWidth) * 2 - 1;
-    mouse.y = -(e.clientY / canvas.clientHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
+    const groundHit=raycaster.intersectObject(ground,false);
+    if(groundHit.length){
+      setMoveTarget(groundHit[0].point);
+      log('Moving');
+    }
+  }
 
-    // check enemies first
-    const enemyObjs = state.enemies.map(e => e.group.children[0]);
-    const enemyHits = raycaster.intersectObjects(enemyObjs, false);
-    if (enemyHits.length > 0) {
-      const hitObj = enemyHits[0].object;
-      const targetEnemy = state.enemies.find(e => e.group.children[0] === hitObj);
-      if (targetEnemy) {
-        state.player.target.copy(targetEnemy.pos);
-        log('Engaging enemy');
-        return;
+  function handlePointerMove(e){
+    if(!orbiting) return;
+    cameraRig.yaw -= e.movementX*0.005;
+    cameraRig.pitch -= e.movementY*0.005;
+  }
+  function handlePointerUp(e){
+    if(e.button===2){ orbiting=false; }
+    canvas.releasePointerCapture?.(e.pointerId);
+  }
+
+  canvas.addEventListener('contextmenu', e=>e.preventDefault());
+  canvas.addEventListener('pointerdown', handlePointerDown);
+  canvas.addEventListener('pointermove', handlePointerMove);
+  canvas.addEventListener('pointerup', handlePointerUp);
+  canvas.addEventListener('wheel', e=>cameraRig.dist += e.deltaY*0.01);
+
+  window.addEventListener('resize', ()=>{
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+
+  document.getElementById('btnSave').onclick=save;
+  document.getElementById('btnReset').onclick=()=>{ localStorage.removeItem('mudscape3d_v2'); location.reload(); };
+
+  // load save if present
+  load();
+
+  // combat tick
+  let tickAcc=0;
+  function tick(){
+    // find nearest enemy within 1.6m
+    let best=null, bestDist=1.6;
+    const p=player.pos;
+    for(const e of enemies){
+      if(!e.userData.alive) continue;
+      const d=e.position.distanceTo(p);
+      if(d<bestDist){ bestDist=d; best=e; }
+    }
+    if(!best) return;
+
+    const dmg=1 + player.skills.attack.level;
+    best.userData.hp-=dmg;
+    spawnText('-'+dmg,best.position.clone(),'#ff4444');
+    player.hp-=1;
+    spawnText('-1',new THREE.Vector3(p.x,p.y+1.5,p.z),'#ffaa00');
+    sfx.beep(320,0.08);
+
+    if(best.userData.hp<=0){
+      best.userData.alive=false;
+      scene.remove(best);
+      player.gold += 7;
+      gainXP('attack',22);
+      log('Enemy defeated');
+    }
+
+    if(player.hp<=0){
+      player.hp=player.maxHp;
+      player.pos.set(0,0,0);
+      player.vel.set(0,0,0);
+      pendingMove=null;
+      log('Respawned');
+    }
+  }
+
+  // enemy AI
+  function updateEnemies(dt){
+    const p=player.pos;
+    for(const e of enemies){
+      if(!e.userData.alive) continue;
+      const ud=e.userData;
+      const pos=e.position;
+
+      // slightly float with terrain
+      pos.y=sampleGroundY(pos.x,pos.z)+0.45;
+
+      const toPlayer=pos.distanceTo(p);
+      if(toPlayer<10){ ud.state='chase'; }
+
+      if(ud.state==='wander'){
+        ud.t-=dt;
+        if(ud.t<=0 || !ud.target){
+          ud.t=1.8+Math.random()*2.4;
+          const angle=Math.random()*Math.PI*2;
+          const r=3+Math.random()*5.5;
+          ud.target={
+            x:ud.home.x + Math.cos(angle)*r,
+            z:ud.home.z + Math.sin(angle)*r
+          };
+        }
+        const tx=ud.target.x, tz=ud.target.z;
+        const d=Math.hypot(tx-pos.x, tz-pos.z);
+        if(d>0.05){
+          pos.x += ((tx-pos.x)/d)*ENEMY_SPEED*dt;
+          pos.z += ((tz-pos.z)/d)*ENEMY_SPEED*dt;
+        }
+      }
+
+      if(ud.state==='chase'){
+        if(toPlayer>18){ ud.state='wander'; continue; }
+        if(toPlayer>0.05){
+          pos.x += ((p.x-pos.x)/toPlayer)*ENEMY_SPEED*1.08*dt;
+          pos.z += ((p.z-pos.z)/toPlayer)*ENEMY_SPEED*1.08*dt;
+        }
+      }
+
+      // clamp world bounds
+      pos.x=clamp(pos.x, -STATE.worldSize/2+1, STATE.worldSize/2-1);
+      pos.z=clamp(pos.z, -STATE.worldSize/2+1, STATE.worldSize/2-1);
+    }
+  }
+
+  function updateSprites(now){
+    const LIFE=950;
+    for(let i=sprites.length-1;i>=0;i--){
+      const s=sprites[i];
+      const age=now - s.userData.birth;
+      const a=clamp(1-age/LIFE,0,1);
+      s.material.opacity=a;
+      s.position.y += 0.0008*age; // ease upward
+      if(age>=LIFE){ scene.remove(s); sprites.splice(i,1); }
+    }
+  }
+
+  function updateHUD(){
+    hud.hp.textContent=player.hp;
+    hud.maxHp.textContent=player.maxHp;
+    hud.gold.textContent=player.gold;
+    const atk=player.skills.attack, def=player.skills.defense;
+    hud.atkLvl.textContent=atk.level; hud.atkXp.textContent=atk.xp; hud.atkNext.textContent=xpNeed(atk.level);
+    hud.defLvl.textContent=def.level; hud.defXp.textContent=def.xp; hud.defNext.textContent=xpNeed(def.level);
+  }
+
+  function stepPlayer(dt){
+    const accel = PLAYER_ACCEL;
+    const drag  = PLAYER_DRAG;
+
+    // accelerate toward pending target
+    if(pendingMove){
+      const diff=pendingMove.clone().sub(player.pos);
+      const dist=diff.length();
+      diff.y=0;
+      if(dist<0.55){
+        pendingMove=null;
+        player.vel.multiplyScalar(0.75);
+      } else {
+        diff.normalize();
+        const desiredSpeed = PLAYER_BASE_SPEED;
+        player.vel.x += diff.x * accel * dt;
+        player.vel.z += diff.z * accel * dt;
+        const speed=Math.hypot(player.vel.x,player.vel.z);
+        if(speed>desiredSpeed){
+          const k=desiredSpeed/speed; player.vel.x*=k; player.vel.z*=k;
+        }
+        // yaw toward move direction
+        const targetYaw=Math.atan2(diff.x,diff.z);
+        let dy=targetYaw - player.yaw;
+        while(dy>Math.PI) dy-=Math.PI*2;
+        while(dy<-Math.PI) dy+=Math.PI*2;
+        player.yaw += clamp(dy,-PLAYER_TURN_SPEED*dt, PLAYER_TURN_SPEED*dt);
       }
     }
 
-    const hits = raycaster.intersectObject(ground, false);
-    if (hits.length) {
-      state.player.target.copy(hits[0].point);
-      log('Moving');
-    }
-  });
+    // drag
+    player.vel.x -= player.vel.x * drag * dt;
+    player.vel.z -= player.vel.z * drag * dt;
 
-  canvas.addEventListener('pointerup', e => {
-    if (e.button === 2) {
-      view.orbiting = false;
-      canvas.releasePointerCapture(e.pointerId);
-    }
-  });
+    // integrate
+    player.pos.x += player.vel.x * dt;
+    player.pos.z += player.vel.z * dt;
 
-  canvas.addEventListener('pointermove', e => {
-    if (!view.orbiting) return;
-    view.yaw -= e.movementX * 0.005;
-    view.pitch = clamp(view.pitch - e.movementY * 0.005, -1.2, -0.1);
-  });
+    // height / bounds
+    player.pos.y = sampleGroundY(player.pos.x, player.pos.z);
+    player.pos.x = clamp(player.pos.x, -STATE.worldSize/2+1.5, STATE.worldSize/2-1.5);
+    player.pos.z = clamp(player.pos.z, -STATE.worldSize/2+1.5, STATE.worldSize/2-1.5);
 
-  canvas.addEventListener('wheel', e => {
-    view.dist = clamp(view.dist + e.deltaY * 0.01, 6, 40);
-  });
-
-  el('btnSave').onclick = save;
-  el('btnReset').onclick = () => {
-    localStorage.removeItem('mudscape3d');
-    location.reload();
-  };
-
-  // world init
-  const rng = createRng(state.rngSeed);
-  spawnEnemies(rng);
-  spawnProps(rng);
-
-  if (!load()) log('New save created');
-
-  // Main loop
-  let last = performance.now();
-
-  function frame(now) {
-    const dt = (now - last) / 1000;
-    last = now;
-
-    // follow target
-    const p = state.player;
-    const diff = new THREE.Vector3().subVectors(p.target, p.pos);
-    const dist = diff.length();
-
-    const speed = 5;
-    if (dist > 0.02) {
-      diff.normalize();
-      p.pos.addScaledVector(diff, speed * dt);
-      // clamp to ground bounds
-      p.pos.x = clamp(p.pos.x, -17, 17);
-      p.pos.z = clamp(p.pos.z, -17, 17);
-    }
-
-    playerGroup.position.set(p.pos.x, 0, p.pos.z);
-
-    updateHud();
-    setCamera();
-
-    renderer.render(scene, camera);
-    requestAnimationFrame(frame);
+    // update mesh
+    playerMesh.position.set(player.pos.x, player.pos.y, player.pos.z);
+    playerMesh.rotation.y = player.yaw;
   }
 
-  requestAnimationFrame(frame);
+  let last=performance.now();
+  function loop(now){
+    const dt=Math.min((now-last)/1000,0.05);
+    last=now;
+
+    tickAcc += dt*1000;
+    while(tickAcc>=TICK_MS){ tick(); tickAcc-=TICK_MS; }
+
+    stepPlayer(dt);
+    updateEnemies(dt);
+    updateCamera(dt);
+    updateSprites(now);
+    updateHUD();
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
 })();
