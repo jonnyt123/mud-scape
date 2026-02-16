@@ -1,42 +1,75 @@
-body {
+:root {
+  --bg: #0f0f0f;
+  --panel: rgba(20, 20, 20, 0.85);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #e8e8e8;
+}
+
+html, body {
   margin: 0;
-  background: #1d1d1d;
-  font-family: monospace;
-  color: #dcdcdc;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  overflow: hidden;
 }
 
-#root {
-  display: flex;
-  min-height: 100vh;
-}
+#app { position: relative; width: 100%; height: 100%; }
+#c { width: 100%; height: 100%; display: block; }
 
-canvas {
-  border: 4px solid #333;
-  background: #4b5c3d;
-}
-
-#ui {
-  width: 320px;
-  background: #111;
+#hud {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: min(380px, calc(100% - 24px));
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   padding: 10px;
-  overflow-y: auto;
+  backdrop-filter: blur(6px);
 }
 
-.tabs button {
-  width: 100%;
-  margin-bottom: 4px;
-  background: #444;
-  border: none;
-  padding: 6px;
-  color: white;
+.row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(0,0,0,0.2);
+}
+
+button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 10px;
   cursor: pointer;
+  font-size: 12px;
+}
+button:hover { background: rgba(255,255,255,0.10); }
+
+.hint {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 4px;
 }
 
-.tabs button:hover {
-  background: #666;
+#log {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.25;
+  max-height: 140px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  opacity: 0.95;
 }
-
-.item {
-  padding: 4px;
-  border-bottom: 1px solid #333;
-}
+#log .line { margin-bottom: 6px; }
