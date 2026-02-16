@@ -1,3 +1,4 @@
+const PLAYER_ACCEL=26.0, PLAYER_DRAG=10.0, PLAYER_BASE_SPEED=5.2, PLAYER_TURN_SPEED=10.0, ENEMY_SPEED=3.1, TICK_MS=600;
 /* Mud Scape 3D v2 - smoother mechanics + detail */
 (() => {
   const $ = (id) => document.getElementById(id);
