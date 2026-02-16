@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  background: #1d1d1d;
+  font-family: monospace;
+  color: #dcdcdc;
+}
+
+#root {
+  display: flex;
+  min-height: 100vh;
+}
+
+canvas {
+  border: 4px solid #333;
+  background: #4b5c3d;
+}
+
+#ui {
+  width: 320px;
+  background: #111;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.tabs button {
+  width: 100%;
+  margin-bottom: 4px;
+  background: #444;
+  border: none;
+  padding: 6px;
+  color: white;
+  cursor: pointer;
+}
+
+.tabs button:hover {
+  background: #666;
+}
+
+.item {
+  padding: 4px;
+  border-bottom: 1px solid #333;
+}
