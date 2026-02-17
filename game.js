@@ -169,21 +169,88 @@ const PLAYER_ACCEL=26.0, PLAYER_DRAG=10.0, PLAYER_BASE_SPEED=5.2, PLAYER_TURN_SP
 
   // player model
   const playerMesh=new THREE.Group();
+  playerMesh.userData.rig=null;
   (function buildPlayer(){
-    const bodyMat=new THREE.MeshStandardMaterial({color:0xd8c24f, roughness:0.95});
-    const dark=new THREE.MeshStandardMaterial({color:0x2b2b2b, roughness:1});
-    const torso=new THREE.Mesh(new THREE.BoxGeometry(0.78,0.95,0.45), bodyMat);
-    torso.position.y=1.2; torso.castShadow=true;
-    const head=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.55,0.55), bodyMat);
-    head.position.y=1.85; head.castShadow=true;
-    const legGeo=new THREE.BoxGeometry(0.26,0.6,0.26);
-    const legL=new THREE.Mesh(legGeo,dark); const legR=legL.clone();
-    legL.position.set(-0.2,0.55,0); legR.position.set(0.2,0.55,0);
-    legL.castShadow=legR.castShadow=true;
-    playerMesh.add(torso,head,legL,legR);
+    const skin=new THREE.MeshStandardMaterial({color:0xf2d1a3, roughness:0.98});
+    const shirt=new THREE.MeshStandardMaterial({color:0xd8c24f, roughness:0.95});
+    const pants=new THREE.MeshStandardMaterial({color:0x2b2b2b, roughness:1});
+
+    const rig={};
+
+    const torso=new THREE.Mesh(new THREE.BoxGeometry(0.78,0.95,0.45), shirt);
+    torso.position.y=1.25; torso.castShadow=true;
+
+    const headPivot=new THREE.Group(); headPivot.position.y=2.0;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.58,0.58,0.58), skin);
+    head.castShadow=true;
+    headPivot.add(head);
+
+    const armGeo=new THREE.BoxGeometry(0.2,0.75,0.2);
+    const armPivotL=new THREE.Group(); armPivotL.position.set(-0.55,1.38,0);
+    const armL=new THREE.Mesh(armGeo, shirt);
+    armL.position.y=-0.37;
+    armL.castShadow=true;
+    armPivotL.add(armL);
+
+    const armPivotR=new THREE.Group(); armPivotR.position.set(0.55,1.38,0);
+    const armR=armL.clone();
+    armR.position.y=-0.37;
+    armPivotR.add(armR);
+
+    const legGeo=new THREE.BoxGeometry(0.24,0.8,0.24);
+    const legPivotL=new THREE.Group(); legPivotL.position.set(-0.25,0.9,0);
+    const legL=new THREE.Mesh(legGeo,pants);
+    legL.position.y=-0.4;
+    legL.castShadow=true;
+    legPivotL.add(legL);
+
+    const legPivotR=new THREE.Group(); legPivotR.position.set(0.25,0.9,0);
+    const legR=legL.clone();
+    legR.position.y=-0.4;
+    legPivotR.add(legR);
+
+    const footGeo=new THREE.BoxGeometry(0.28,0.12,0.48);
+    const footL=new THREE.Mesh(footGeo,pants);
+    footL.position.set(0,-0.75,0.1);
+    const footR=footL.clone();
+    legPivotL.add(footL);
+    legPivotR.add(footR);
+
+    playerMesh.add(torso,headPivot,armPivotL,armPivotR,legPivotL,legPivotR);
     playerMesh.castShadow=true; playerMesh.receiveShadow=true;
+
+    rig.torso=torso;
+    rig.head=headPivot;
+    rig.armL=armPivotL;
+    rig.armR=armPivotR;
+    rig.legL=legPivotL;
+    rig.legR=legPivotR;
+    playerMesh.userData.rig=rig;
+
     scene.add(playerMesh);
   })();
+
+  let animT=0;
+  function updatePlayerRig(dt){
+    const rig = playerMesh.userData?.rig;
+    if(!rig) return;
+    animT+=dt;
+    const speed=Math.hypot(player.vel.x,player.vel.z);
+    const move=clamp(speed/(PLAYER_BASE_SPEED*1.1),0,1.35);
+
+    const f=6.6;
+    const swing=Math.sin(animT*f)*Math.PI*0.40*move;
+    const armSwing=swing*0.8;
+
+    rig.armL.rotation.x = armSwing;
+    rig.armR.rotation.x = -armSwing;
+    rig.legL.rotation.x = -swing;
+    rig.legR.rotation.x = swing;
+
+    const breathe=(1-move)*Math.sin(animT*2.2)*Math.PI*0.02;
+    rig.head.rotation.x=breathe;
+    rig.torso.position.y=1.25 + Math.abs(Math.sin(animT*f)*0.03*move);
+  }
 
   // floating damage text
   const sprites=[];
@@ -252,10 +319,6 @@ const PLAYER_ACCEL=26.0, PLAYER_DRAG=10.0, PLAYER_BASE_SPEED=5.2, PLAYER_TURN_SP
     camera.lookAt(player.pos.x, player.pos.y+1.2, player.pos.z);
     camera.aspect=canvas.clientWidth/canvas.clientHeight;
     camera.updateProjectionMatrix();
-  }
-
-  function toWorld(yaw){
-    return new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
   }
 
   function setMoveTarget(worldPoint){
@@ -462,6 +525,7 @@ const PLAYER_ACCEL=26.0, PLAYER_DRAG=10.0, PLAYER_BASE_SPEED=5.2, PLAYER_TURN_SP
     // update mesh
     playerMesh.position.set(player.pos.x, player.pos.y, player.pos.z);
     playerMesh.rotation.y = player.yaw;
+    updatePlayerRig(dt);
   }
 
   let last=performance.now();
