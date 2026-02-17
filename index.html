@@ -2,39 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mud Scape 3D</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mud Scape</title>
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div id="app">
-    <div id="hud">
-      <div class="row">
-        <div class="pill">HP: <span id="hp"></span>/<span id="maxHp"></span></div>
-        <div class="pill">Gold: <span id="gold"></span></div>
-      </div>
+  <canvas id="c"></canvas>
 
+  <div id="ui">
+    <div class="panel">
       <div class="row">
-        <div class="pill">Attack: <span id="atkLvl"></span> (<span id="atkXp"></span>/<span id="atkNext"></span>)</div>
-        <div class="pill">Defense: <span id="defLvl"></span> (<span id="defXp"></span>/<span id="defNext"></span>)</div>
-      </div>
-
-      <div class="row">
+        <div class="title">Mud Scape</div>
+        <div class="spacer"></div>
         <button id="btnSave">Save</button>
+        <button id="btnLoad">Load</button>
         <button id="btnReset">Reset</button>
       </div>
 
-      <div class="hint">
-        Left click: move • Click enemy: attack • Right drag: orbit • Wheel: zoom
+      <div class="row stats">
+        <div>HP: <b id="hp">0</b>/<span id="maxHp">0</span></div>
+        <div>Combat: <b id="combatLevel">1</b></div>
+        <div>Gold: <b id="gold">0</b></div>
       </div>
 
-      <div id="log"></div>
+      <div class="row stats">
+        <div>Atk <b id="atkLvl">1</b> (<span id="atkXp">0</span>/<span id="atkNext">0</span>)</div>
+        <div>Str <b id="strLvl">1</b> (<span id="strXp">0</span>/<span id="strNext">0</span>)</div>
+        <div>Def <b id="defLvl">1</b> (<span id="defXp">0</span>/<span id="defNext">0</span>)</div>
+        <div>HP <b id="hpLvl">10</b> (<span id="hpXp">0</span>/<span id="hpNext">0</span>)</div>
+      </div>
+
+      <div class="row tabs">
+        <button class="tab" data-tab="inv">Inventory</button>
+        <button class="tab" data-tab="equip">Equipment</button>
+        <button class="tab" data-tab="bank">Bank</button>
+        <button class="tab" data-tab="log">Log</button>
+      </div>
+
+      <div id="tab-inv" class="tabBody"></div>
+      <div id="tab-equip" class="tabBody hidden"></div>
+      <div id="tab-bank" class="tabBody hidden"></div>
+      <div id="tab-log" class="tabBody hidden"><div id="log"></div></div>
     </div>
 
-    <canvas id="c"></canvas>
+    <div id="hint" class="hint">
+      Left click: move/attack · Right drag: orbit · Wheel: zoom · Click mob: target
+    </div>
   </div>
 
+  <div id="err" class="error hidden"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="game.js"></script>
+  <script src="./game.js"></script>
 </body>
 </html>
