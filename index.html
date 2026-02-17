@@ -54,5 +54,27 @@
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="./game.js"></script>
+  <script>
+    // Pure UI wiring to avoid dead buttons.
+    function MUDS_showTab(tab) {
+      const ids = {
+        inv: "tab-inv",
+        equip: "tab-equip",
+        bank: "tab-bank",
+        log: "tab-log",
+      };
+      for (const [key, id] of Object.entries(ids)) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.classList.toggle("hidden", key !== tab);
+      }
+    }
+
+    document.querySelectorAll("#ui .tabs .tab").forEach((btn) => {
+      btn.addEventListener("click", () => MUDS_showTab(btn.dataset.tab || "log"));
+    });
+
+    MUDS_showTab("inv");
+  </script>
 </body>
 </html>
