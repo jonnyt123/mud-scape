@@ -68,7 +68,7 @@ button:hover { background: rgba(255,255,255,0.10); }
 }
 .hidden { display: none; }
 
-.grid {
+grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
@@ -113,8 +113,8 @@ button:hover { background: rgba(255,255,255,0.10); }
   right: 14px;
   top: 14px;
   width: min(520px, calc(100vw - 28px));
-  background: rgba(180, 40, 40, 0.18);
-  border: 1 solid rgba(255, 100, 100, 0.35);
+  background: rgba(180,40,40,0.18);
+  border: 1px solid rgba(255,100,100,0.35);
   color: #ffd4d4;
   padding: 12px;
   border-radius: 12px;
